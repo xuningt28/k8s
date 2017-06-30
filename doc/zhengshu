@@ -1,0 +1,565 @@
+### 一 安装证书 
+
+##  1 安装cfssl
+wget	https://pkg.cfssl.org/R1.2/cfssl_linux-amd64 --no-check-certificate 
+chmod	+x	cfssl_linux-amd64 
+sudo	mv	cfssl_linux-amd64	/usr/local/bin/cfssl
+wget	https://pkg.cfssl.org/R1.2/cfssljson_linux-amd64  --no-check-certificate
+chmod	+x	cfssljson_linux-amd64 
+sudo	mv	cfssljson_linux-amd64	/usr/local/bin/cfssljson
+wget	https://pkg.cfssl.org/R1.2/cfssl-certinfo_linux-amd64  --no-check-certificate
+chmod	+x	cfssl-certinfo_linux-amd64 
+sudo	mv	cfssl-certinfo_linux-amd64	/usr/local/bin/cfssl-certinfo
+export	PATH=/usr/local/bin:$PATH
+
+# ---------------   1 安装cfssl 结束  ---------------------
+
+## 2 创建CA
+mkdir /root/ssl
+cd /root/ssl
+cfssl print-defaults config > config.json
+cfssl print-defaults csr > csr.json
+
+#　创建CA配置文件　
+cat ca-config.json
+
+#{
+#  "signing": {
+#    "default": {
+#      "expiry": "8760h" 
+#    },
+#    "profiles": {
+#      "kubernetes": {
+#        "usages": [
+#            "signing",
+#            "key encipherment",
+#            "server auth",
+#            "client auth"
+#        ],
+#        "expiry": "8760h"
+#      } 
+#   
+#    }
+#   
+#  }
+#    
+#}
+
+###  字段说明
+# ca-config.json: 可定义多个profiles，分别指定不同的过期时间，使用场景，后续在签名证书时使用某个profile
+# signing: 表示该证书可用于签名其它证书，生成的ca.pem证书中 CA=TRUE
+# server auth: 表示client可以用该CA对server提供的证书进行验证;
+# client auth: 
+
+
+# 创建CA证书签名请求
+cat ca-csr.json
+
+#{
+#  "CN": "kubernetes",
+#  "key": {
+#    "algo": "rsa",
+#    "size": 2048
+#  },
+# 
+#  "names": [
+#    {
+#      "C": "CN",
+#      "ST": "BeiJing",
+#      "L": "BeiJing",
+#      "O": "k8s",
+#      "OU": "System"
+#    }
+# ]
+#
+#}
+
+
+### 字段说明
+#　＂ＣＮ＂： Common Name, kube-apiserver 从证书中提取字段作为请求的用户名（user name）;
+#  "O": Organization, kube-apiserver 从证书中提取字段作为请求用户所属组（group）;
+
+
+# 生成CA证书和私钥
+cfssl gencert -initca ca-csr.json | cfssljson -bare ca
+ls ca*
+
+# 目录中应包括如下东西    ca-config.json ca.csr cs-csr.json ca-key.pem ca.pem
+
+
+
+# --------------- 2 创建CA结束  -------------------------
+
+
+##　3 创建 kubernetes 证书 
+vi /root/ssl/kubernetes-csr.json 
+
+#{
+#    "CN": "kubernetes",
+#    "hosts": [
+#      "127.0.0.1",
+#      "192.168.240.100",
+#      "192.168.240.101",
+#      "192.168.240.102",
+#      "10.254.0.1",
+#      "kubernetes",
+#      "kubernetes.default",
+#      "kubernetes.default.svc",
+#      "kubernetes.default.svc.cluster",
+#      "kubernetes.default.svc.cluster.local"
+#    ],
+# 
+#    "key": {
+#        
+#        "algo": "rsa",
+#        "size": 2048
+#    },
+#
+#    "names": [
+#   
+#        {
+#            "C": "CN",
+#            "ST": "BeiJing",
+#            "L": "BeiJing",
+#            "O": "k8s",
+#            "OU": "System"
+#        }
+#    ] 
+#}
+#
+
+
+#  说明
+#  如果host字段为空则要指定ip或域名列表，由于证书后续被etcd 集群和 k8s master 使用
+#  k8s master 集群的主机ip和k8s服务的服务ip,一般是kube-apiserver指定的service-cluster-ip-range网段的第一个ip,如10.254.0.1 
+
+#  生成k8s证书和私钥
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes kubernetes-csr.json | cfssljson -bare kubernetes
+ls kubernetes*
+# 目前下应用如下内容 kubernetes.csr  kubernetes-csr.json  kubernetes-key.pem  kubernetes.pem
+
+
+
+
+# ------------------  3 创建k8s证书 结束  ---------------
+
+
+## 5 创建 admin 证书
+
+vi /root/ssl/admin-csr.json 
+#{
+#    "CN": "admin",
+#    "hosts": [],
+#    "key": {
+#      
+#      "algo": "rsa",
+#      "size": 2048
+#
+#    },
+#
+#    "names": [
+#      
+#      {
+#        "C": "CN",
+#        "ST": "BeiJing",
+#        "L": "BeiJing",
+#        "O": "system:masters",
+#        "OU": "System"
+#      }
+#
+#    ]
+#}
+# 
+
+# 说明
+#　kube-apiserver 使用 RBAC对客户端（kubelet,kube-proxy,pod）进行制授权
+#  kube-apiserver 预定了一些RBAC 使用的RoleBindings , 如cluster-admin将Group system:master 与role cluster-amdin 绑定，该role授与了调   用kube-apiserver的所有API的权限
+#  OU指定证书的Group为system:master,kubelet 使用证书访问kube-apiserver时，由于证书被CA签名，所以认证通过，同时由于证书用户组为经过授   权的system:masters,所以被授权访问所有的API
+
+
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes admin-csr.json | cfssljson -bare admin
+ls admin* 
+
+# 如下文件 admin.csr  admin-csr.json  admin-key.pem  admin.pem
+
+# ------------------ 5 创建 admin 证书 结束  -----------------------
+
+
+## 6 创建 kube-proxy 证书
+vim  kube-proxy-csr.json
+#{
+#   "CN": "system:kube-proxy",
+#   "hosts": [],
+#   "key": {
+#     "algo": "rsa",
+#     "size": 2048
+#   },
+#   
+#   "names": [
+#     {
+#       "C": "CN",
+#       "ST": "BeiJing",
+#       "L": "BeiJing",
+#       "O": "k8s",
+#       "OU": "System"
+#     }
+#
+#   ]
+#
+#}
+
+# 说明：
+# CN指定证书的user为system:kube-proxy
+# kube-api 定义的rolebinding cluster-admin 将user system:kube-proxy 与role system:node-proxier绑定 ，为role授予调用kube-apiserver proxy 相关api权限
+
+# 生成kube-proxy 客户端证书和私钥
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem  -config=ca-config.json -profile=kubernetes kube-proxy-csr.json | cfssljson -bare kube-proxy
+
+ls kube-proxy*
+# 有如下内容  kube-proxy.csr  kube-proxy-csr.json  kube-proxy-key.pem  kube-proxy.pem
+
+
+# ----------------  6 创建 kube-proxy 证书  结束  ----------------------
+
+
+## 7 检验证书
+
+# 以kubernetes证书为例
+# 使用openssl 命令
+openssl x509 -noout  -text -in kubernetes.pem
+
+# 使用cfssl 命令
+cfssl-certinfo -cert kubernetes.pem
+
+##----- 7 检验证书 结束 ----------------
+
+
+## 8 分发证书
+mkdir -p /etc/kubernetes/ssl
+cp /root/ssl/*.pem /etc/kubernetes/ssl
+scp /root/ssl/*.pem node1:/etc/kubernetes/ssl
+scp /root/ssl/*.pem node2:/etc/kubernetes/ssl
+
+##------------ 8 分发证书 结束-----------------
+mkdir -p /etc/kubernetes/ssl
+
+
+### -----------  一 安装证书  结束 --------------------
+
+
+###　二 创建 kubeconfig 文件
+
+## 1 创建tls bootstrapping token
+export BOOTSTRAP_TOKEN=$(head -c 16 /dev/urandom | od -An -t x | tr -d ' ')
+cat > /etc/kubernetes/token.csv <<EOF
+${BOOTSTRAP_TOKEN},kubelet-bootstrap,10001,"system:kubelet-bootstrap"
+EOF
+scp /kubernetes/token.csv  node1:/etc/kubernetes/
+scp /kubernetes/token.csv  node2:/etc/kubernetes/
+## ----------  1 创建tls bootstrapping token  ----------------
+
+## 2 创建kubelet bootstrapping kuberconfig 文件
+cd /etc/kubernetes
+export KUBE_APISERVER="https://192.168.248.100:6443"
+
+# 设置集群参数
+kubectl config set-cluster kubernetes \
+ --certificate-authority=/etc/kubernetes/ssl/ca.pem \
+ --embed-certs=true \
+ --server=${KUBE_APISERVER} \
+ --kubeconfig=bootstrap.kubeconfig
+
+# 设置客户端认证参数
+kubectl config set-credentials kubelet-bootstrap \
+ --token=${BOOTSTRAP_TOKEN} \
+ --kubeconfig=bootstrap.kubeconfig
+
+# 设置上下文参数
+kubectl config set-context default \
+ --cluster=kubernetes \
+ --user=kubelet-bootstrap \
+ --kubeconfig=bootstrap.kubeconfig
+
+# 设置默认上下文
+kubectl config use-context default --kubeconfig=bootstrap.kubeconfig
+
+# --embed-certs 为 true 时表示将 certificate-authority 证书写入到生成的 bootstrap.kubeconfig 文件中
+# 设置客户端认证参数时没有指定秘钥和证书，后续由 kube-apiserver 自动生成
+
+
+## ------------- 2 创建kubelet bootstrapping kuberconfig 文件 结束   --------------
+
+## 3 创建 kube-proxy kubeconfig 文件 
+export KUBE_APISERVER="https://192.168.240.100:6443"
+
+# 设置集群参数
+kubectl config set-cluster kubernetes \
+ --certificate-authority=/etc/kubernetes/ssl/ca.pem \
+ --embed-certs=true \
+ --server=${KUBE_APISERVER} \
+ --kubeconfig=kube-proxy.kubeconfig
+
+# 设置客户端认证参数
+kubectl config set-credentials kube-proxy \
+ --client-certificate=/etc/kubernetes/ssl/kube-proxy.pem \
+ --client-key=/etc/kubernetes/ssl/kube-proxy-key.pem \
+ --embed-certs=true \
+ --kubeconfig=kube-proxy.kubeconfig
+
+# 设置上下文参数
+kubectl config set-context default \
+ --cluster=kubernetes \
+ --user=kube-proxy \
+ --kubeconfig=kube-proxy.kubeconfig
+
+# 设置默认上下文
+kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
+
+# 说明
+# 设置集群参数和客户端谁参数时 --embed-certs 都为true,这会将certificate-authority,client-certificate 和client-key指向的证书文件内容   写入到生成的kube-proxy.kubeconfig 文件中
+# kube-proxy.pem 证书中cn为system:kube-proxy, kube-apiserver 定义为rolebinding cluster-admin 将 system:kube-proxy 与 role system:nod  e-proxier 绑定，该role 授予了调用 kube-apiserver Proxy相关的API的权限
+
+## -------------- 3 创建 kube-proxy kubeconfig 文件 结束 -------------------------
+
+## 4 创建高可用etcd集群
+# 下载二进制文件
+# https://github.com/cores/etcd/releases    下载 etcd-v3.1.5-linux-amd64.tar.gz 
+cd /root/install/soft
+tar zxvf  etcd-v3.1.5-linux-amd64.tar.gz
+mv etcd-v3.1.5-linux-amd64/etcd* /usr/local/bin/
+
+# 创建etcd systemd.service
+# 替换ETCD_NAME  INTERNAL_IP 变量值;
+
+# etcd机器集群
+# sz-pg-oam-docker-test-001.tendcloud.com 192.168.240.100
+# sz-pg-oam-docker-test-002.tendcloud.com 192.168.240.101
+# sz-pg-oam-docker-test-003.tendcloud.com 192.168.240.102
+
+export ETCD_NAME=sz-pg-oam-docker-test-001.tendcloud.com
+export INTERNAL_IP=192.168.240.100
+
+# etcd.sh  生成 etcd.service 文件 
+#export ETCD_NAME=sz-pg-oam-docker-test-001.tendcloud.com
+#export INTERNAL_IP=192.168.240.100
+#cat     >       etcd.service    <<EOF 
+#[Unit] 
+#Description=Etcd        Server 
+#After=network.target 
+#After=network-online.target 
+#Wants=network-online.target 
+#Documentation=https://github.com/coreos
+#[Service] 
+#Type=notify 
+#WorkingDirectory=/var/lib/etcd/ 
+#EnvironmentFile=-/etc/etcd/etcd.conf 
+#ExecStart=/usr/local/bin/etcd  \\
+#        --name  ${ETCD_NAME}    \\
+#        --cert-file=/etc/kubernetes/ssl/kubernetes.pem  \\
+#        --key-file=/etc/kubernetes/ssl/kubernetes-key.pem       \\
+#        --peer-cert-file=/etc/kubernetes/ssl/kubernetes.pem     \\
+#        --peer-key-file=/etc/kubernetes/ssl/kubernetes-key.pem  \\
+#        --trusted-ca-file=/etc/kubernetes/ssl/ca.pem    \\
+#        --peer-trusted-ca-file=/etc/kubernetes/ssl/ca.pem       \\
+#        --initial-advertise-peer-urls   https://${INTERNAL_IP}:2380     \\
+#        --listen-peer-urls      https://${INTERNAL_IP}:2380     \\
+#        --listen-client-urls    https://${INTERNAL_IP}:2379,https://127.0.0.1:2379      \\
+#        --advertise-client-urls https://${INTERNAL_IP}:2379     \\
+#        --initial-cluster-token etcd-cluster-0  \\
+#        --initial-cluster       sz-pg-oam-docker-test-001.tendcloud.com=https://192.168.240.100:2380,sz-pg-oam-docker-test-002.tendcloud.com=https://192.168.240.101:2380,sz-pg-oam-docker-test-003.tendcloud.com=https://192.168.240.102:2380  \\
+#--initial-cluster-state new     \\
+#--data-dir=/var/lib/etcd 
+#Restart=on-failure 
+#RestartSec=5 
+#LimitNOFILE=65536
+#[Install] 
+#WantedBy=multi-user.target 
+#EOF
+
+# 说明 
+# 指定etcd目录 
+# 工作目录 /var/lib/etcd    数据目录 /var/lib/etcd
+# 创建 kubernetes.pem 证书使用 kubermetes-csr.json , host 字段包含有etcd结点的ip
+# --initial-cluster-state 值为new时， --name的参数值必须位于 --inital-cluster 列表中
+
+# 启动 etcd 服务
+mv etcd.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable etcd
+systemctl start  etcd
+systemctl status etcd
+
+# 验证服务
+curl --cacert /etc/kubernetes/ssl/ca.pem  --cert /etc/kubernetes/ssl/kubernetes.pem  --key /etc/kubernetes/ssl/kubernetes-key.pem  https://192.168.240.100:2379/health
+etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl/ca.pem --cert-file=/etc/kubernetes/ssl/kubernetes.pem --key-file=/etc/kubernetes/ssl/kubernetes-key.pem  member list
+etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl/ca.pem --cert-file=/etc/kubernetes/ssl/kubernetes.pem --key-file=/etc/kubernetes/ssl/kubernetes-key.pem  cluster-health
+
+## ------- 4 创建高可用etcd集群 结束  -------------------
+
+## 5 下载配置 kubectl 命令行工具
+# 下载
+wget https://dl.k8s.io/v1.6.0/kubernetes-client-linux-amd64.tar.gz
+tar -xzvf kubernetes-client-linux-amd64.tar.gz
+cp kubernetes/client/bin/kube* /usr/bin/
+chmod a+x /usr/bin/kube*
+
+# 创建 kubectl kubeconfig 文件
+export KUBE_APISERVER="https://192.168.240.100:6443"
+
+# 设置集群参数
+kubectl config set-cluster kubernetes \
+--certificate-authority=/etc/kubernetes/ssl/ca.pem \ 
+--embed-certs=true \
+--server=${KUBE_APISERVER} 
+
+# 客户端认证参数
+kubectl config set-credentials admin \
+--client-certificate=/etc/kubernetes/ssl/admin.pem \
+--embed-certs=true \
+--client-key=/etc/kubernetes/ssl/admin-key.pem
+
+# 设置上下文
+kubectl config set-context kubernetes \
+--cluster=kubernetes \
+--user=admin
+
+# 设置默认上下文
+kubectl config use-context kubernetes
+
+# 说明
+# admin.pem 证书ou字段为 system:master,kube-apiserver 定义的rolebinding ,cluster-admin 将 group system:masters 与 role cluster-admin 绑定，role 授予了调用 kube-apiserver 相关api的权限
+# 生成的kubeconfig 保存到 ~/.kube/config
+
+## -------  5 下载配置 kubectl 命令行工具  结束  -----
+
+## 6 部署 kubernetes master 集群  
+# master 结点   kube-apiserver   kube-scheduler  kube-controller-manager
+wget https://dl.k8s.io/v1.6.0/kubernetes-server-linux-amd64.tar.gz
+tar -zxvf kubernetes-server-linux-amd64.tar.gz
+cd kubernetes
+tar -xzvf kubernetes-src.tar.gz
+cp -r server/bin/{kube-apiserver,kube-controller-manager,kube-scheduler,kubectl,kube-proxy,kubelet} /usr/local/bin
+
+# 配置启动 kube-apiserver
+vi /usr/lib/systemd/system/kube-apiserver.service
+
+# kube-apiserver.service 配置文件 
+
+#[Unit] 
+#Description=Kubernetes API Service 
+#Documentation=https://github.com/GoogleCloudPlatform/kubernetes 
+#After=network.target 
+#After=etcd.service
+#
+#[Service] 
+#EnvironmentFile=-/etc/kubernetes/config 
+#EnvironmentFile=-/etc/kubernetes/apiserver 
+#ExecStart=/usr/local/bin/kube-apiserver       \
+#        $KUBE_LOGTOSTDERR       \    
+#        $KUBE_LOG_LEVEL \    
+#        $KUBE_ETCD_SERVERS      \    
+#        $KUBE_API_ADDRESS       \    
+#        $KUBE_API_PORT  \    
+#        $KUBELET_PORT   \    
+#        $KUBE_ALLOW_PRIV        \    
+#        $KUBE_SERVICE_ADDRESSES \    
+#        $KUBE_ADMISSION_CONTROL \    
+#        $KUBE_API_ARGS    
+#Restart=on-failure 
+#Type=notify 
+#LimitNOFILE=65536
+#
+#[Install] 
+#WantedBy=multi-user.target
+
+# config 文件    # use by kube-apiserver kube-controller-manager ube-scheduler kubelet kube-proxy
+vi /etc/kubernetes/config 
+# KUBE_API_ADDRESS="--advertise-address=192.168.240.100   --bind-address=192.168.240.100  --insecure-bind-address=192.168.240.100"
+# #KUBE_API_PORT="--port=8080"  
+# #KUBELET_PORT="--kubelet-port=10250" 
+# KUBE_ETCD_SERVERS="--etcd-servers=https://192.168.240.100:2379,192.168.240.101:2379,192.168.240.102:2379" 
+# KUBE_SERVICE_ADDRESSES="--service-cluster-ip-range=10.254.0.0/16" 
+# KUBE_ADMISSION_CONTROL="--admission-control=ServiceAccount,NamespaceLifecycle,NamespaceExists,LimitRanger,ResourceQuota " 
+# KUBE_API_ARGS=" --authorization-mode=RBAC  
+#                --runtime-config=rbac.authorization.k8s.io/v1beta1  
+#                --kubelet-https=true  
+#                --experimental-bootstrap-token-auth  
+#                --token-auth-file=/etc/kubernetes/token.csv  
+#                --service-node-port-range=30000-32767  
+#                --tls-cert-file=/etc/kubernetes/ssl/kubernetes.pem  
+#                --tls-private-key-file=/etc/kubernetes/ssl/kubernetes-key.pem  
+#                --client-ca-file=/etc/kubernetes/ssl/ca.pem
+#                --service-account-key-file=/etc/kubernetes/ssl/ca-key.pem  
+#                --etcd-cafile=/etc/kubernetes/ssl/ca.pem  
+#                --etcd-certfile=/etc/kubernetes/ssl/kubernetes.pem  
+#                --etcd-keyfile=/etc/kubernetes/ssl/kubernetes-key.pem  
+#                --enable-swagger-ui=true
+#                --apiserver-count=3  
+#                --audit-log-maxage=30  
+#                --audit-log-maxbackup=3 
+#                --audit-log-maxsize=100  
+#                --audit-log-path=/var/lib/audit.log  
+#                --event-ttl=1h
+#               "
+
+# 说明 
+# --authorization-mode=RBAC  授权模式
+# kube-scheduler  kube-controller-manager  kube-apiserver  在一台机器上，使用非安全口
+# kubelet  kube-proxy kubectl 在node结点上，通过安全口访问 kube-apiserver , 必须通过 tls认证
+# kube-proxy kubectl 通过证书里指定的user,group来达到RBAC授权
+# 如果使用了kubelet tls boostrap机制，则不能再指定 --kubelet-certificate-authority --kubelet-client-certificate --kubelet-client-key  选项，否则后续 kube-apiserver 校验证书出现 x509:certificate signed by unknown authority 
+# --admission-control 必须包含 ServiceAccount
+# --bind-address 不能是 127.0.0.1
+# runtime-config 配置为 rbac.authorization.k8s.io/v1beta1, 表示运行时的apiversion
+# --service-cluster-ip-range 指定 service cluster ip 地址段，该地址段不能路由可达
+# 缺省情况下，kubernetes 对像保存在 etcd /registry 下，可以通过 --etcd-prefix 调整 
+
+# 启动命令
+systemctl daemon-reload
+systemctl enable kube-apiserver
+systemctl start  kube-apiserver
+systemctl status kube-apiserver
+
+
+# 配置和启动 kube-controller-manager
+vi /usr/lib/systemd/system/kube-controller-manager.service
+#[Unit]
+#Description=Kubernetes Controller Manager
+#Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+#
+#[Service]
+#EnvironmentFile=-/etc/kubernetes/config
+#EnvironmentFile=-/etc/kubernetes/controller-manager
+##User=kube
+#ExecStart=/usr/bin/kube-controller-manager \
+#            $KUBE_LOGTOSTDERR \
+#            $KUBE_LOG_LEVEL \
+#            $KUBE_MASTER \
+#            $KUBE_CONTROLLER_MANAGER_ARGS
+#Restart=on-failure
+#LimitNOFILE=65536
+#
+#[Install]
+#WantedBy=multi-user.target
+
+# 配置文件 
+vi /etc/kubernetes/controller-manager
+#KUBE_CONTROLLER_MANAGER_ARGS="--address=127.0.0.1  --service-cluster-ip-range=10.254.0.0/16  --cluster-name=kubernetes --cluster-signing-cert-file=/etc/kubernetes/ssl/ca.pem --cluster-signing-key-file=/etc/kubernetes/ssl/ca-key.pem --service-account-private-key-file=/etc/kubernetes/ssl/ca-key.pem --root-ca-file=/etc/kubernetes/ssl/ca.pem --leader-elect=true"
+
+
+# 说明 
+#　--service-cluster-ip-range 指定 cluster 中 service 的 cidr范围，在node间路由不可达，必须与kube-apiserver中设置一致 
+#  --cluster-singing-*        指定证书和私钥文件用来签名为tls bootstrap 创建的证书和私钥
+#  --root-ca-file             用来对kube-apiserver 证书进行检验，指定参数后，才会在pod容器的ServiceAccount 中放置该CA证书文件
+#  --address                  值必须为 127.0.0.1 ,因为当前kube-apiserver  期望scheduler ,controller-manager 在同一机器上
+                             
+# 启动 kube-controller-manager
+systemctl daemon-reload
+systemctl enable kube-controller-manager
+systemctl start kube-controller-manager
+
+
+
+
+
+## -------- 6 部署 kubernetes master 集群 结束  ---------
