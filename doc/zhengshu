@@ -634,19 +634,6 @@ etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl
 etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl/ca.pem --cert-file=/etc/kubernetes/ssl/kubernetes.pem --key-file=/etc/kubernetes/ssl/kubernetes-key.pem  ls
 etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl/ca.pem --cert-file=/etc/kubernetes/ssl/kubernetes.pem --key-file=/etc/kubernetes/ssl/kubernetes-key.pem  mk /kube-centos/network/config "{ \"Network\": \"172.30.0.0/16\", \"SubnetLen\": 24, \"Backend\": { \"Type\": \"vxlan\" } }"
 
-#? /run/flannel/subnet.env
-#[root@kubernetes flannel]# cat /run/flannel/subnet.env 
-#FLANNEL_NETWORK=172.30.0.0/16
-#FLANNEL_SUBNET=172.30.46.1/24
-#FLANNEL_MTU=1450
-#FLANNEL_IPMASQ=false
-
-
-#? /run/docker_opts.env 
-#CKER_OPT_BIP="--bip=172.30.46.1/24"
-#DOCKER_OPT_IPMASQ="--ip-masq=true"
-#DOCKER_OPT_MTU="--mtu=1450"
-#DOCKER_OPTS=" --bip=172.30.46.1/24 --ip-masq=true --mtu=1450"
 
 # 配置flannel 
 vi /usr/lib/systemd/system/flanneld.service
@@ -682,8 +669,59 @@ etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl
 #/kube-centos/network/subnets/172.30.54.0-24
 #/kube-centos/network/subnets/172.30.12.0-24
 
+# 说明
+# /run/flannel/docker             docker0 网卡参数  
+# /run/flannel/subnet.env         flannel 网段划分参数
 
 
+# 安装 kublet
+
+
+cd /etc/kubernetes
+kubectl create clusterrolebinding kubelet-bootstrap --clusterrole=system:node-bootstrapper --user=kubelet-bootstrap
+# --user=kubelet-boootstrap 是在 /etc/kubernetes/token.csv 文件中指定的用户名，同时也写入了 /etc/kubernetes/bootstrap.kubeconfig
+
+wget https://dl.k8s.io/v1.6.0/kubernetes-server-linux-amd64.tar.gz
+tar -zxvf kubernetes-server-linux-amd64.tar.gz
+cd kubernetes
+tar -xzvf kubernetes-src.tar.gz
+cp -r ./server/bin/{kube-proxy,kubelet} /usr/bin
+
+
+# 创建 kubelet 的 service 配置文件
+vi /usr/lib/systemd/system/kubelet.service
+#[Unit]
+#Description=Kubernetes Kubelet Server
+#Documentation=https://github.com/googleCloudPlatform/kubernetes
+#After=docker.service
+#Requires=docker.service
+#
+#[Service]
+#WorkingDirectory=/var/lib/kubelet
+#EnvironmentFile=-/etc/kubernetes/config
+#EnvironmentFile=-/etc/kubernetes/kubelet
+#ExecStart=/usr/bin/kubelet \
+#           $KUBE_LOGTOSTDERR \
+#           $KUBE_LOG_LEVEL \
+#           $KUBELET_API_SERVER \
+#           $KUBELET_ADDRESS \
+#           $KUBELET_PORT \
+#           $KUBELET_API_HOSTNAME \
+#           $KUBE_ALLOW_PRIV \
+#           $KUBELET_POD_INFRA_CONTAINER \
+#           $KUBELET_AGGS
+#Restart=on-failure
+#
+#[Install]
+#WantedBy=multi-user.target
+
+# kubelet 配置文件
+vi /etc/kubernetes/kubelet
+#KUBELET_ADDRESS='--address=192.168.240.100'
+#KUBELET_HOSTNAME="--hostname-override=193.168.240.100"
+#KUBELET_API_SERVER="--api-server=http://192.168.240.100:8080"
+#KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=sz-pg-oam-docker-hub-001.tendcloud.com/library/pod-infrastructure:rhel7"
+#KUBELET_ARGS="--cgroup-driver=systemd --cluster-dns=10.254.0.2 --experimental-bootstrap-kubeconfig=/etc/kubernetes/bootstrap.kubeconfig --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --require-kubeconfig --cert-dir=/etc/kubernetes/ssl --cluster-domain=cluster.local. --hairpin-mode promiscuous-bridge --serialize-image-pulls=false"
 
 ## -------- 7 部署 kubernetes node 结点 结束  -----------
 
