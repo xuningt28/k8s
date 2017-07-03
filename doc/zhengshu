@@ -741,6 +741,56 @@ systemctl start kubelet
 # 原因 docker相比1.10增加了KernelMemory变量和CgroupDriver变量，KernelMemory变量表示是否设置linux内核内存限制，CgroupDriver变量表示使用哪个Cgroup驱动，有两种驱动，分别是cgroupfs和systemd，默认使用cgroupfs
 # 解决 /usr/lib/systemd/system/kubelet.service 中增加 --cgroup-driver=systemd
 
+# node结点加入验证
+kubectl get nodes
+#NAME         STATUS    AGE       VERSION
+#kubernetes   Ready     2h        v1.6.0
+#node-1       Ready     19m       v1.6.0
+#node-2       Ready     16m       v1.6.0
+
+# 配置kube-proxy
+# 创建kube-proxy service
+vi /usr/lib/systemd/system/kube-proxy.service
+#[Unit]
+#Description=Kubernetes Kube-Proxy Server
+#Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+#After=network.target
+#
+#[Service]
+#EnvironmentFile=-/etc/kubernetes/config
+#EnvironmentFile=-/etc/kubernetes/proxy
+#ExecStart=/usr/bin/kube-proxy \
+#         $KUBE_LOGTOSTDERR \
+#         $KUBE_LOG_LEVEL \
+#         $KUBE_MASTER \
+#         $KUBE_PROXY_ARGS
+#Restart=on-failure
+#LimitNOFILE=65536
+#
+#[Install]
+#WantedBy=multi-user.target
+
+# kube-proxy 配置文件 
+vi /etc/kubernetes/proxy
+# KUBE_PROXY_ARGS=""--bind-address=192.168.240.100 --hostname-override=192.168.240.100 --kubeconfig=/etc/kubernetes/kube-proxy.kubeconfig --cluster-cidr=10.254.0.0/16
+
+# 说明 
+# --hostname-override 与 kubelet 一致
+# kube-proxy根据 --cluster-cidr 判断集群内部和外部流量，指定--cluster-cidr 或 --masquerade-all选项后kube-proxy才会对访问server ip的i  请求作snat;
+# --kubeconfig指定的配置文件嵌入了kube-apiserver的地址，用户名，证书，秘钥等请求和认证信息
+# 预定义的rolebinding cluster-admin 将user system:kube-proxy 与 role system:node-proxier 绑定，该role授予了调用kube-apiserver proxy   相关api的权限
+
+# 启动kube-proxy  
+systemctl daemon-reload
+systemctl enable kube-proxy
+systemctl start kube-proxy
+systemctl status kube-proxy
+
+
+ 
+
+
+
 
 
 
