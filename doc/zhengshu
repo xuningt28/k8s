@@ -674,7 +674,7 @@ etcdctl --endpoints=https://192.168.240.100:2379   --ca-file=/etc/kubernetes/ssl
 # /run/flannel/subnet.env         flannel 网段划分参数
 
 
-# 安装 kublet
+# 安装 kublet(此步需在所有node结点上执行)
 
 
 cd /etc/kubernetes
