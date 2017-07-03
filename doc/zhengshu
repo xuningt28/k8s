@@ -723,5 +723,28 @@ vi /etc/kubernetes/kubelet
 #KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=sz-pg-oam-docker-hub-001.tendcloud.com/library/pod-infrastructure:rhel7"
 #KUBELET_ARGS="--cgroup-driver=systemd --cluster-dns=10.254.0.2 --experimental-bootstrap-kubeconfig=/etc/kubernetes/bootstrap.kubeconfig --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --require-kubeconfig --cert-dir=/etc/kubernetes/ssl --cluster-domain=cluster.local. --hairpin-mode promiscuous-bridge --serialize-image-pulls=false"
 
+# 说明 
+# --address 不能设置为 127.0.0.1 否则后续 pods 访问 kubelet 的 api接口时会失败，
+# --hostname-override选项，如是设置了，kube-proxy 也需要设置该选项，否则会出现找不到node的情况 
+# --experimental-bootstrap-kubeconfig 指向botstrap kubeconfig文件，kubelet使用文件中的用户名和token向kube-apiserver发送tls bootstrap  ping请求 
+# 管理员通过csr请求后，kubelet自动在--cert-dir 目录创建证书和私钥文件（kubelet-client.scr  kubelet-client.key）,然后写入 --kubeconfi  g 文件  
+# 建议在--kubeconfig配置文件中指定kube-apiserver地址，如未指定,则必指定 --require-kubeconfig选项后才从配置文件中读取kube-apiserver的  地址，否则kubelet启动后将找不到kubelet-apiserver(日志中提示未找到api server),kubectl get nodes 不会 返回对应的nodes信息  
+# --cluster-dns  指定kubedns的service ip(可先分配，后续创建kubedns服务器时指定该ip), --cluster-domain指定域名后缀，这两参数同时指定   后才会生效
+
+# 启动kubelet
+systemctl daemon-reload
+systemctl enable kubelet
+systemctl start kubelet
+
+####  问题及解决方法   ####
+# 错误 kubelet: error: failed to run kubelet:failed to create kubelet: misconfiguration: kubelet cgroup dirver: "cgroupfs is fidderent from docker cgroup driver: "systemd"
+# 原因 docker相比1.10增加了KernelMemory变量和CgroupDriver变量，KernelMemory变量表示是否设置linux内核内存限制，CgroupDriver变量表示使用哪个Cgroup驱动，有两种驱动，分别是cgroupfs和systemd，默认使用cgroupfs
+# 解决 /usr/lib/systemd/system/kubelet.service 中增加 --cgroup-driver=systemd
+
+
+
+
+
+
 ## -------- 7 部署 kubernetes node 结点 结束  -----------
 
