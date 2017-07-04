@@ -260,7 +260,7 @@ scp /kubernetes/token.csv  node2:/etc/kubernetes/
 
 ## 2 创建kubelet bootstrapping kuberconfig 文件
 cd /etc/kubernetes
-export KUBE_APISERVER="https://192.168.248.100:6443"
+export KUBE_APISERVER="https://192.168.240.100:6443"
 
 # 设置集群参数
 kubectl config set-cluster kubernetes \
@@ -709,7 +709,7 @@ vi /usr/lib/systemd/system/kubelet.service
 #           $KUBELET_API_HOSTNAME \
 #           $KUBE_ALLOW_PRIV \
 #           $KUBELET_POD_INFRA_CONTAINER \
-#           $KUBELET_AGGS
+#           $KUBELET_ARGS
 #Restart=on-failure
 #
 #[Install]
@@ -718,10 +718,10 @@ vi /usr/lib/systemd/system/kubelet.service
 # kubelet 配置文件
 vi /etc/kubernetes/kubelet
 #KUBELET_ADDRESS='--address=192.168.240.100'
-#KUBELET_HOSTNAME="--hostname-override=193.168.240.100"
+#KUBELET_HOSTNAME="--hostname-override=192.168.240.100"
 #KUBELET_API_SERVER="--api-server=http://192.168.240.100:8080"
-#KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=sz-pg-oam-docker-hub-001.tendcloud.com/library/pod-infrastructure:rhel7"
-#KUBELET_ARGS="--cgroup-driver=systemd --cluster-dns=10.254.0.2 --experimental-bootstrap-kubeconfig=/etc/kubernetes/bootstrap.kubeconfig --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --require-kubeconfig --cert-dir=/etc/kubernetes/ssl --cluster-domain=cluster.local. --hairpin-mode promiscuous-bridge --serialize-image-pulls=false"
+#KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=registry.access.redhat.com/rhel7/pod-infrastructure"
+#KUBELET_ARGS="--cgroup-driver=systemd --cluster-dns=10.254.0.2 --experimental-bootstrap-kubeconfig=/etc/kuberntes/bootstrap.kubeconfig --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --require-kubeconfig --cert-dir=/etc/kubernetes/ssl --cluster-domain=cluster.local. --hairpin-mode promiscuous-bridge --serialize-image-pulls=false"
 
 # 说明 
 # --address 不能设置为 127.0.0.1 否则后续 pods 访问 kubelet 的 api接口时会失败，
@@ -786,9 +786,12 @@ systemctl enable kube-proxy
 systemctl start kube-proxy
 systemctl status kube-proxy
 
-
+# 验证测试
+kubectl run nginx --replicas=2 --labels="run=load-balancer-example" --image="docker.io/nginx" --port=80
  
+kubectl expose deployment nginx --type=NodePort --name=example-service
 
+kubectl describe svc example-service
 
 
 

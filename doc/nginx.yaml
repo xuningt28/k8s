@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Replicationtroller       
+metadate:
+  name: nginx       
+  labels:
+    name: nginx
+spec:
+  replicas: 1          
+  selector:
+    name: nginx
+  template:
+    labels:
+      name: nginx   
+  spec:
+    containers:
+    - name: nginx
+        image: docker.io/nginx 
+        ports:
+        - containerPort: 6379
