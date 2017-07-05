@@ -241,7 +241,6 @@ scp /root/ssl/*.pem node1:/etc/kubernetes/ssl
 scp /root/ssl/*.pem node2:/etc/kubernetes/ssl
 
 ##------------ 8 分发证书 结束-----------------
-mkdir -p /etc/kubernetes/ssl
 
 
 ### -----------  一 安装证书  结束 --------------------
@@ -473,7 +472,13 @@ vi /usr/lib/systemd/system/kube-apiserver.service
 #WantedBy=multi-user.target
 
 # config 文件    # use by kube-apiserver kube-controller-manager ube-scheduler kubelet kube-proxy
-vi /etc/kubernetes/config 
+vi /etc/kubernetes/config
+# KUBE_LOGTOSTDERR="--logtostderr=true"
+# KUBE_LOG_LEVEL="--v=0"
+# KUBE_ALLOW="--allow-privileged=true"
+# KUBE_MASTER="--master=http://192.168.240.100:8080"
+
+vi /etc/kubernetes/apiserver  
 # KUBE_API_ADDRESS="--advertise-address=192.168.240.100   --bind-address=192.168.240.100  --insecure-bind-address=192.168.240.100"
 # #KUBE_API_PORT="--port=8080"  
 # #KUBELET_PORT="--kubelet-port=10250" 
@@ -531,7 +536,7 @@ vi /usr/lib/systemd/system/kube-controller-manager.service
 #EnvironmentFile=-/etc/kubernetes/config
 #EnvironmentFile=-/etc/kubernetes/controller-manager
 ##User=kube
-#ExecStart=/usr/bin/kube-controller-manager \
+#ExecStart=/usr/local/bin/kube-controller-manager \
 #            $KUBE_LOGTOSTDERR \
 #            $KUBE_LOG_LEVEL \
 #            $KUBE_MASTER \
@@ -566,7 +571,7 @@ vi /usr/lib/systemd/system/kube-scheduler.service
 #[Service]
 #EnvironmentFile=-/etc/kubernetes/config
 #EnvironmentFile=-/etc/kubernetes/scheduler
-#ExecStart=/usr/bin/kube-scheduler \
+#ExecStart=/usr/local/bin/kube-scheduler \
 #            $KUBE_LOGTOSTDERR \
 #            $KUBE_LOG_LEVEL \
 #            $KUBE_MASTER \
@@ -719,9 +724,9 @@ vi /usr/lib/systemd/system/kubelet.service
 vi /etc/kubernetes/kubelet
 #KUBELET_ADDRESS='--address=192.168.240.100'
 #KUBELET_HOSTNAME="--hostname-override=192.168.240.100"
-#KUBELET_API_SERVER="--api-server=http://192.168.240.100:8080"
+#KUBELET_API_SERVER="--api-servers=http://192.168.240.100:8080"
 #KUBELET_POD_INFRA_CONTAINER="--pod-infra-container-image=registry.access.redhat.com/rhel7/pod-infrastructure"
-#KUBELET_ARGS="--cgroup-driver=systemd --cluster-dns=10.254.0.2 --experimental-bootstrap-kubeconfig=/etc/kuberntes/bootstrap.kubeconfig --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --require-kubeconfig --cert-dir=/etc/kubernetes/ssl --cluster-domain=cluster.local. --hairpin-mode promiscuous-bridge --serialize-image-pulls=false"
+#KUBELET_ARGS="--cgroup-driver=systemd --cluster-dns=10.254.0.2 --experimental-bootstrap-kubeconfig=/etc/kubernetes/bootstrap.kubeconfig --kubeconfig=/etc/kubernetes/kubelet.kubeconfig --require-kubeconfig --cert-dir=/etc/kubernetes/ssl --cluster-domain=cluster.local. --hairpin-mode promiscuous-bridge --serialize-image-pulls=false"
 
 # 说明 
 # --address 不能设置为 127.0.0.1 否则后续 pods 访问 kubelet 的 api接口时会失败，
@@ -741,12 +746,29 @@ systemctl start kubelet
 # 原因 docker相比1.10增加了KernelMemory变量和CgroupDriver变量，KernelMemory变量表示是否设置linux内核内存限制，CgroupDriver变量表示使用哪个Cgroup驱动，有两种驱动，分别是cgroupfs和systemd，默认使用cgroupfs
 # 解决 /usr/lib/systemd/system/kubelet.service 中增加 --cgroup-driver=systemd
 
-# node结点加入验证
+# 结点授权
+kubectl get scr 
+# csr-dgkn0   17m       kubelet-bootstrap   Pending
+
 kubectl get nodes
-#NAME         STATUS    AGE       VERSION
-#kubernetes   Ready     2h        v1.6.0
-#node-1       Ready     19m       v1.6.0
-#node-2       Ready     16m       v1.6.0
+# No resources found
+
+# 通过csr请求
+kubectl certificate approve csr-dgkn0
+# csr-dgkn0   22m       kubelet-bootstrap   Approved,Issued
+
+# node结点加入验证
+kubectl get node
+#NAME         STATUS     AGE       VERSION
+#kubernetes   Ready      1d        v1.6.0
+
+# 结点正确加入后，会生成如下文件
+# /etc/kubernetes/kubelet.kubeconfig
+# /etc/kubernetes/ssl/kubelet-client.crt
+# /etc/kubernetes/ssl/kubelet-client.key
+# /etc/kubernetes/ssl/kubelet.crt
+# /etc/kubernetes/ssl/kubelet.key
+
 
 # 配置kube-proxy
 # 创建kube-proxy service
@@ -787,17 +809,59 @@ systemctl start kube-proxy
 systemctl status kube-proxy
 
 # 验证测试
+# deployment 测试
 kubectl run nginx --replicas=2 --labels="run=load-balancer-example" --image="docker.io/nginx" --port=80
- 
 kubectl expose deployment nginx --type=NodePort --name=example-service
-
 kubectl describe svc example-service
+#Name:                   example-service
+#Namespace:              default
+#Labels:                 run=nginx
+#Annotations:            <none>
+#Selector:               run=nginx
+#Type:                   NodePort
+#IP:                     10.254.96.218
+#Port:                   <unset> 80/TCP
+#NodePort:               <unset> 32462/TCP
+#Endpoints:              172.30.30.3:80,172.30.30.4:80
+#Session Affinity:       None
+#Events:                 <none>
+# 说明 
+# IP 虚拟，集群内使用
+# Endpoints 实例接入点，相当于docker实例
+# Type NodePort 为物理机端口
+# NodePort 为物理机对外映射端口
 
+# yaml rc 测试
+vi  rc.yaml 
+#apiVersion: v1
+#kind: ReplicationController
+#metadata:
+#  name: redis-master
+#spec:
+#  replicas: 1
+#  selector:
+#    name: redis-master
+#  template:
+#    metadata:
+#      name: redis-master
+#      labels:
+#        name: redis-master
+#    spec:
+#      containers:
+#      - name: redis-master
+#        image: kubeguide/redis-master
+#        ports:
+#        - containerPort: 6379
 
-
-
-
-
+kubectl create -f rc.yaml
+kubectl get rc
+NAME           DESIRED   CURRENT   READY     AGE
+#redis-master   1         1         1         27m
+kubectl get pods
+NAME                     READY     STATUS    RESTARTS   AGE
+#nginx-158599303-87pnr    1/1       Running   0          12m
+#nginx-158599303-z96tq    1/1       Running   0          12m
+#redis-master-2v3c3       1/1       Running   0          27m
 
 ## -------- 7 部署 kubernetes node 结点 结束  -----------
 
