@@ -1,0 +1,8 @@
+docker pull docker.io/calico/node:v1.1.0
+docker tag  docker.io/calico/node:v1.1.0  quay.io/calico/node:v1.1.0
+mkdir -p /opt/cni/bin/
+
+wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/v1.9.1/calico
+wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/v1.9.1/calico-ipam
+
+chmod +x /opt/cni/bin/calico /opt/cni/bin/calico-ipam
