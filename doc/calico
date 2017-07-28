@@ -1,6 +1,5 @@
 1 wget http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/calico.yaml
-
-2 修改 etcd
+ 修改文件中 etcd地址 
 
 3  kubectl create -f calico.yaml
 
