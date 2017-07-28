@@ -179,6 +179,31 @@ RestartSec=5
 WantedBy=multi-user.target
 
 
+8 修改kube-proxy 增加 --proxy-mode=itpables 
+[Unit]
+Description=Kubernetes Kube-Proxy Server
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=network.target
+
+[Service]
+WorkingDirectory=/var/lib/kube-proxy
+EnvironmentFile=-/etc/kubernetes/env.sh
+ExecStart=/usr/bin/kube-proxy \
+ --bind-address=${NODE_IP} \
+ --hostname-override=${NODE_IP} \
+ --cluster-cidr=${SERVICE_CIDR} \
+ --kubeconfig=/etc/kubernetes/kube-proxy.kubeconfig \
+ --logtostderr=true \
+ --v=2 \
+ --proxy-mode=iptables
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+~
+
+
 9 下载cni 插件    (kubelet cni插件在所有机器上都要安装，用于calico打路由)
 wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/v1.9.1/calico
 wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/v1.9.1/calico-ipam
