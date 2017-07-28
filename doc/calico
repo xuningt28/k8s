@@ -74,3 +74,115 @@ subjects:
 NAME                                           AGE
 calico-node                                    16h
 calico-policy-controller                       16h
+
+7 修改kube-apiserver.service
+[root@kubernetes calico_new]# vi /lib/systemd/system/kube-apiserver.service 
+[Unit]
+Description=Kubernetes API Service
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+After=network.target
+After=etcd.service
+
+[Service]
+EnvironmentFile=-/etc/kubernetes/env.sh
+EnvironmentFile=-/etc/kubernetes/config
+EnvironmentFile=-/etc/kubernetes/apiserver
+ExecStart=/usr/local/bin/kube-apiserver       \
+ --admission-control=NamespaceLifecycle,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota \
+ --advertise-address=${MASTER_IP} \
+ --bind-address=${MASTER_IP} \
+ --insecure-bind-address=${MASTER_IP} \
+ --authorization-mode=RBAC \
+ --runtime-config=rbac.authorization.k8s.io/v1alpha1 \
+ --kubelet-https=true \
+ --experimental-bootstrap-token-auth \
+ --token-auth-file=/etc/kubernetes/token.csv \
+ --service-cluster-ip-range=${SERVICE_CIDR} \
+ --service-node-port-range=${NODE_PORT_RANGE} \
+ --tls-cert-file=/etc/kubernetes/ssl/kubernetes.pem \
+ --tls-private-key-file=/etc/kubernetes/ssl/kubernetes-key.pem \
+ --client-ca-file=/etc/kubernetes/ssl/ca.pem \
+ --service-account-key-file=/etc/kubernetes/ssl/ca-key.pem \
+ --etcd-cafile=/etc/kubernetes/ssl/ca.pem \
+ --etcd-certfile=/etc/kubernetes/ssl/kubernetes.pem \
+ --etcd-keyfile=/etc/kubernetes/ssl/kubernetes-key.pem \
+ --etcd-servers=${ETCD_ENDPOINTS} \
+ --enable-swagger-ui=true \
+ --allow-privileged=true \
+ --apiserver-count=3 \
+ --audit-log-maxage=30 \
+ --audit-log-maxbackup=3 \
+ --audit-log-maxsize=100 \
+ --audit-log-path=/var/lib/audit.log \
+ --event-ttl=1h \
+ --v=2
+ 
+ 7  配置环境变量文件 /etc/kubernetes/env.sh
+ [root@kubernetes calico_new]# cat /etc/kubernetes/env.sh
+BOOTSTRAP_TOKEN="3dc3d7185d153eb17277ca0bc9366513" 
+SERVICE_CIDR="192.168.244.0/22"
+CLUSTER_CIDR="10.10.6.0/24"
+NODE_PORT_RANGE="1-65535"
+ETCD_ENDPOINTS="http://10.10.0.70:2379,http://10.10.0.73:2379,http://10.10.0.74:2379"
+CLUSTER_KUBERNETES_SVC_IP="192.168.244.1"
+CLUSTER_DNS_SVC_IP="192.168.244.2"
+CLUSTER_DNS_DOMAIN="cluster.local."
+NODE_NAME=etcd-host0
+NODE_IP=10.10.0.70
+NODE_IPS="10.10.0.70,10.10.0.73,10.10.0.74"
+ETCD_NODES=etcd-host0=http://10.10.0.70:2380,etcd-host1=http://10.10.0.73:2380,etcd-host2=http://10.10.0.74:2380
+MASTER_IP=10.10.0.70
+KUBE_APISERVER="https://${MASTER_IP}:6443"
+
+8 配置kubelet.service文件
+[root@kubernetes calico_new]# vi /usr/lib/systemd/system/kubelet.service 
+[Unit]
+Description=Kubernetes Kubelet Server
+Documentation=https://github.com/googleCloudPlatform/kubernetes
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=/var/lib/kubelet
+EnvironmentFile=-/etc/kubernetes/env.sh
+ExecStart=/usr/bin/kubelet \
+ --api-servers=http://10.10.0.70:8080 \
+ --address=${NODE_IP} \
+ --hostname-override=${NODE_IP} \
+ --pod-infra-container-image=registry.access.redhat.com/rhel7/pod-infrastructure:latest \
+ --experimental-bootstrap-kubeconfig=/etc/kubernetes/bootstrap.kubeconfig \
+ --kubeconfig=/etc/kubernetes/kubelet.kubeconfig \
+ --require-kubeconfig \
+ --cert-dir=/etc/kubernetes/ssl \
+ --cluster-dns=${CLUSTER_DNS_SVC_IP} \
+ --cluster-domain=${CLUSTER_DNS_DOMAIN} \
+ --hairpin-mode promiscuous-bridge \
+ --allow-privileged=true \
+ --serialize-image-pulls=false \
+ --logtostderr=true \
+ --cgroup-driver=systemd \
+ --v=2 \
+ --allow-privileged=true \
+ --network-plugin=cni \
+ --network-plugin-dir=/etc/cni/net.d \
+ --cni-conf-dir=/etc/cni/net.d \
+ --cni-bin-dir=/opt/cni/bin
+
+ExecStopPost=/usr/sbin/iptables -A INPUT -s 172.16.0.0/12  -p tcp --dport 4194 -j ACCEPT
+ExecStopPost=/usr/sbin/iptables -A INPUT -s 10.0.0.0/8     -p tcp --dport 4194 -j ACCEPT
+ExecStopPost=/usr/sbin/iptables -A INPUT -s 192.168.0.0/16 -p tcp --dport 4194 -j ACCEPT
+ExecStopPost=/usr/sbin/iptables -A INPUT                   -p tcp --dport 4194 -j DROP
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+
+
+
+ 
+ 
+
+
