@@ -180,6 +180,103 @@ RestartSec=5
 WantedBy=multi-user.target
 
 
+9 下载cni 插件    (kubelet cni插件在所有机器上都要安装，用于calico打路由)
+wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/v1.9.1/calico
+wget -N -P /opt/cni/bin https://github.com/projectcalico/cni-plugin/releases/download/v1.9.1/calico-ipam
+chmod +x /opt/cni/bin/calico /opt/cni/bin/calico-ipam
+wget https://github.com/projectcalico/calicoctl/releases/download/v1.3.0/calicoctl
+chmod +x calicoctl
+
+wget https://github.com/containernetworking/cni/releases/download/v0.4.0/cni-v0.4.0.tgz
+tar -zxvf cni-v0.4.0.tgz
+cp loopback /opt/cni/bin/
+
+
+10 生成pod 测试 
+#centos-rcd.yaml
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: centos
+  labels:
+    name: centos
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        name: centos
+    spec:
+      containers:
+      - name: centos
+        image: index.tenxcloud.com/tenxcloud/docker-centos
+        ports:
+        - containerPort: 6379
+      nodeSelector:
+        kubernetes.io/hostname: "192.168.99.130"
+        
+2、部署redis，指定部署在192.168.99.131节点上，redis-rc.yaml如下：
+
+apiVersion: v1
+kind: ReplicationController
+metadata:
+  name: redis
+  labels:
+    k8s-app: redis
+spec:
+  replicas: 1
+  selector:
+    k8s-app: redis
+  template:
+    metadata:
+      labels:
+        k8s-app: redis
+    spec:
+      containers:
+      - name: redis
+        image: 10.10.30.166/public/redis:v1
+        ports:
+        - containerPort: 6379
+          name: redis-tcp
+          protocol: TCP
+      nodeSelector:
+        kubernetes.io/hostname: "192.168.99.131"
+redis-svc.yaml如下：
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector:
+    k8s-app: redis
+  clusterIP: 10.254.159.20
+  ports:
+  - name: "1"
+    port: 6379
+    protocol: TCP        
+
+11 机器上路由
+[root@kubernetes calico_new]# route -n
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         115.182.58.1    0.0.0.0         UG    425    0        0 eth0
+10.10.0.0       0.0.0.0         255.255.248.0   U     425    0        0 eth1
+10.10.64.0      0.0.0.0         255.255.254.0   U     425    0        0 eth2
+10.10.254.0     0.0.0.0         255.255.255.192 U     0      0        0 *
+10.10.254.22    0.0.0.0         255.255.255.255 UH    0      0        0 calie6777031d6e
+
+
+[root@node1 ~]# route -n 
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         115.182.58.1    0.0.0.0         UG    425    0        0 eth0
+10.10.0.0       0.0.0.0         255.255.248.0   U     425    0        0 eth1
+10.10.64.0      0.0.0.0         255.255.254.0   U     425    0        0 eth2
+10.10.254.0     10.10.0.70      255.255.255.192 UG    0      0        0 eth1
+10.10.254.192   0.0.0.0         255.255.255.192 U     0      0        0 *
+10.10.254.215   0.0.0.0         255.255.255.255 UH    0      0        0 calia9ad2aa4efb
+10.10.254.216   0.0.0.0         255.255.255.255 UH    0      0        0 calid81dca27a3d
 
 
  
