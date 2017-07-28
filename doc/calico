@@ -1,0 +1,76 @@
+1 wget http://docs.projectcalico.org/v2.3/getting-started/kubernetes/installation/hosted/calico.yaml
+
+2 修改 etcd
+
+3  kubectl create -f calico.yaml
+
+4 [root@kubernetes calico_new]# kubectl get pods -n kube-system
+NAME                                        READY     STATUS    RESTARTS   AGE
+calico-node-2dz49                           2/2       Running   0          17h
+calico-node-60rdf                           2/2       Running   0          17h
+calico-policy-controller-3020253993-4tx38   1/1       Running   0          17h
+
+5 增加 RBAC权限
+vim rule.yaml
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-policy-controller
+  namespace: kube-system
+rules:
+  - apiGroups:
+    - ""
+    - extensions
+    resources:
+      - pods
+      - namespaces
+      - networkpolicies
+    verbs:
+      - watch
+      - list
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-policy-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-policy-controller
+subjects:
+- kind: ServiceAccount
+  name: calico-policy-controller
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: calico-node
+  namespace: kube-system
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - nodes
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1beta1
+kind: ClusterRoleBinding
+metadata:
+  name: calico-node
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: calico-node
+subjects:
+- kind: ServiceAccount
+  name: calico-node
+  namespace: kube-system
+  
+  
+ 6 权限查看 
+ [root@kubernetes calico_new]# kubectl get clusterrolebindings
+NAME                                           AGE
+calico-node                                    16h
+calico-policy-controller                       16h
